@@ -207,6 +207,10 @@ declare namespace Resumable {
      **/
     addFile(file: File, event: Event): void;
     /**
+     * Add an Array of HTML5 File objects to the list of files.
+     **/
+    addFiles(files: Array<File>): void;
+    /**
      * Cancel upload of a specific ResumableFile object on the list from the list.
      **/
     removeFile(file: ResumableFile): void;
@@ -221,14 +225,14 @@ declare namespace Resumable {
     getOpt(o: string): any;
 
     // Events
-  /**
-   * Change event handler
-   **/
+    /**
+     * Change event handler
+     **/
     handleChangeEvent(e: Event): void;
 
     /**
-    * Drop event handler
-    **/
+     * Drop event handler
+     **/
     handleDropEvent(e: Event): void;
 
     /**
@@ -299,7 +303,7 @@ declare namespace Resumable {
      * Listen to all the events listed above with the same callback function.
      **/
     on(event: 'catchAll', callback: () => void): void;
-  /**
+    /**
      * Listen for event from Resumable.js (see below)
      **/
     on(event: string, callback: Function): void;
@@ -369,6 +373,6 @@ declare namespace Resumable {
   interface ResumableChunk { }
 }
 
-declare module 'resumablejs' {
+declare module 'resumablejs-fork' {
   export = Resumable;
 }
