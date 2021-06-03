@@ -116,7 +116,7 @@
       }
     };
     $.indexOf = function(array, obj) {
-    	if (array.indexOf) { return array.indexOf(obj); }     
+    	if (array.indexOf) { return array.indexOf(obj); }
     	for (var i = 0; i < array.length; i++) {
             if (array[i] === obj) { return i; }
         }
@@ -172,7 +172,7 @@
         }
         var relativePath = file.webkitRelativePath||file.relativePath||file.fileName||file.name; // Some confusion in different versions of Firefox
         var size = file.size;
-        return(size + '-' + relativePath.replace(/[^0-9a-zA-Z_-]/img, ''));
+        return(size + '-' + relativePath.replace(/[^0-9a-zA-Z_-]/img, '') + '-' + Date.now());
       },
       contains:function(array,test) {
         var result = false;
