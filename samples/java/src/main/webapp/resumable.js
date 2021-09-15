@@ -39,15 +39,15 @@
       forceChunkSize:false,
       simultaneousUploads:3,
       fileParameterName:'file',
-      chunkNumberParameterName: 'resumableChunkNumber',
-      chunkSizeParameterName: 'resumableChunkSize',
-      currentChunkSizeParameterName: 'resumableCurrentChunkSize',
-      totalSizeParameterName: 'resumableTotalSize',
-      typeParameterName: 'resumableType',
-      identifierParameterName: 'resumableIdentifier',
-      fileNameParameterName: 'resumableFilename',
-      relativePathParameterName: 'resumableRelativePath',
-      totalChunksParameterName: 'resumableTotalChunks',
+      chunkNumberParameterName: 'resumable_chunk_number',
+      chunkSizeParameterName: 'resumable_chunk_size',
+      currentChunkSizeParameterName: 'resumable_current_chunk_size',
+      totalSizeParameterName: 'resumable_total_size',
+      typeParameterName: 'resumable_type',
+      identifierParameterName: 'resumable_identifier',
+      fileNameParameterName: 'resumable_filename',
+      relativePathParameterName: 'resumable_relative_path',
+      totalChunksParameterName: 'resumable_total_chunks',
       dragOverClass: 'dragover',
       throttleProgressCallbacks: 0.5,
       query:{},
@@ -116,7 +116,7 @@
       }
     };
     $.indexOf = function(array, obj) {
-    	if (array.indexOf) { return array.indexOf(obj); }     
+    	if (array.indexOf) { return array.indexOf(obj); }
     	for (var i = 0; i < array.length; i++) {
             if (array[i] === obj) { return i; }
         }
