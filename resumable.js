@@ -84,6 +84,8 @@
       method: 'multipart',
       uploadMethod: 'POST',
       testMethod: 'GET',
+      successMethod: 'PATCH',
+      applySuccessMethod: false,
       prioritizeFirstAndLastChunk: false,
       target: '/',
       testTarget: null,
@@ -583,6 +585,11 @@
             $.resumableObj.fire('fileProgress', $, message); // it's at least progress
             if ($.isComplete()) {
               $.resumableObj.fire('fileSuccess', $, message);
+
+              if ($.getOpt('applySuccessMethod')) {
+                $.sendSuccessMethod($);
+              }
+
             }
             break;
           case 'retry':
@@ -732,6 +739,64 @@
         }
       };
 
+      $.sendSuccessMethod = function (resumableFileObj) {
+        let fileTarget = null;
+        if (resumableFileObj.file.target !== undefined && resumableFileObj.file.target !== null) {
+          fileTarget = resumableFileObj.file.target;
+        }
+
+        // Add data from the query options
+        const parameterNamespace = $.getOpt('parameterNamespace');
+        let params             = [];
+        let customQuery        = $.getOpt('query');
+        if (typeof customQuery == 'function') customQuery = customQuery(resumableFileObj, $);
+        $h.each(customQuery, function (k, v) {
+          params.push([encodeURIComponent(parameterNamespace + k), encodeURIComponent(v)].join('='));
+        });
+
+        // Add extra data to identify chunk
+        params = params.concat(
+          [
+            // define key/value pairs for additional parameters
+            ['totalSizeParameterName', resumableFileObj.size],
+            ['typeParameterName', resumableFileObj.file.type],
+            ['identifierParameterName', resumableFileObj.uniqueIdentifier],
+            ['hashParameterName', resumableFileObj.hash],
+            ['fileNameParameterName', resumableFileObj.fileName],
+            ['relativePathParameterName', resumableFileObj.relativePath],
+            ['totalChunksParameterName', resumableFileObj.chunks.length]
+          ].filter(function (pair) {
+            // include items that resolve to truthy values
+            // i.e. exclude false, null, undefined and empty strings
+            return $.getOpt(pair[0]);
+          })
+            .map(function (pair) {
+              // map each key/value pair to its final form
+              return [
+                parameterNamespace + $.getOpt(pair[0]),
+                encodeURIComponent(pair[1])
+              ].join('=');
+            })
+        );
+
+        const xhr = new XMLHttpRequest();
+
+        // Append the relevant chunk and send it
+        xhr.open($.getOpt('successMethod'), $h.getTarget('file-success', params, fileTarget));
+
+        xhr.timeout         = $.getOpt('xhrTimeout');
+        xhr.withCredentials = $.getOpt('withCredentials');
+        // Add data from header options
+        var customHeaders     = $.getOpt('headers');
+        if (typeof customHeaders === 'function') {
+          customHeaders = customHeaders(resumableFileObj, $);
+        }
+        $h.each(customHeaders, function (k, v) {
+          xhr.setRequestHeader(k, v);
+        });
+        xhr.send(null);
+      };
+
       // Bootstrap and return
       $.resumableObj.fire('chunkingStart', $);
       $.bootstrap();
@@ -776,12 +841,14 @@
         // Set up request and listen for event
         $.xhr = new XMLHttpRequest();
 
-        var testHandler = function (e) {
+        const testHandler = function (e) {
           $.tested   = true;
           var status = $.status();
           if (status == 'success') {
             $.callback(status, $.message());
             $.resumableObj.uploadNextChunk();
+          } else if ($.xhr.status === 413) {
+            $.callback('error', $.message());
           } else {
             $.send();
           }
@@ -814,7 +881,7 @@
             // define key/value pairs for additional parameters
             ['chunkNumberParameterName', $.offset + 1],
             ['chunkHashParameterName', chunkHash],
-            ['chunkSizeParameterName', $.getOpt('chunkSize')],
+            ['chunkSizeParameterName',  chunkSize],
             ['currentChunkSizeParameterName', $.endByte - $.startByte],
             ['totalSizeParameterName', $.fileObjSize],
             ['typeParameterName', $.fileObjType],
@@ -927,7 +994,7 @@
         var query       = [
           ['chunkNumberParameterName', $.offset + 1],
           ['chunkHashParameterName', chunkHash],
-          ['chunkSizeParameterName', $.getOpt('chunkSize')],
+          ['chunkSizeParameterName',  chunkSize],
           ['currentChunkSizeParameterName', $.endByte - $.startByte],
           ['totalSizeParameterName', $.fileObjSize],
           ['typeParameterName', $.fileObjType],
