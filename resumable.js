@@ -8,6 +8,28 @@
 (function () {
   "use strict";
 
+  function hashBlob(blob, encoding) {
+    if (encoding === void 0) { encoding = 'hex'; }
+    return new Promise(function (resolve, reject) {
+      var fileReader = new FileReader();
+      fileReader.addEventListener('load', function () {
+        crypto.subtle.digest('SHA-1', fileReader.result).then(function (buffer) {
+          var typedArray = new Uint8Array(buffer);
+          if (encoding === 'hex') {
+            resolve(Array.prototype.map.call(typedArray, function (x) { return ('00' + x.toString(16)).slice(-2); }).join(''));
+          }
+          else {
+            resolve(btoa(String.fromCharCode.apply(null, typedArray)));
+          }
+        });
+      });
+      fileReader.addEventListener('error', function () {
+        reject(fileReader.error);
+      });
+      fileReader.readAsArrayBuffer(blob);
+    });
+  }
+
   var Resumable = function (opts) {
     if (!(this instanceof Resumable)) {
       return new Resumable(opts);
@@ -36,14 +58,19 @@
     $.files    = [];
     $.defaults = {
       chunkSize: 1 * 1024 * 1024,
+      chunkSizeFrom10To100: 10 * 1024 * 1024,
+      chunkSizeFrom100To1000: 50 * 1024 * 1024,
+      chunkSizeFrom1000: 100 * 1024 * 1024,
       forceChunkSize: false,
       simultaneousUploads: 3,
       fileParameterName: 'file',
       chunkNumberParameterName: 'resumable_chunk_number',
       chunkSizeParameterName: 'resumable_chunk_size',
+      chunkHashParameterName: 'resumable_chunk_hash',
       currentChunkSizeParameterName: 'resumable_current_chunk_size',
       totalSizeParameterName: 'resumable_total_size',
       typeParameterName: 'resumable_type',
+      hashParameterName: 'resumable_hash',
       identifierParameterName: 'resumable_identifier',
       fileNameParameterName: 'resumable_filename',
       relativePathParameterName: 'resumable_relative_path',
@@ -63,6 +90,7 @@
       parameterNamespace: '',
       testChunks: true,
       generateUniqueIdentifier: null,
+      generateHash: null,
       getTarget: null,
       maxChunkRetries: 100,
       chunkRetryInterval: undefined,
@@ -136,6 +164,25 @@
       return -1;
     }
 
+    $.calcChunkSize = function (fileSize) {
+      var chunkSize = $.getOpt('chunkSize');
+      var fileSizeInMb = fileSize / 1024 / 1024;
+
+      if (fileSizeInMb > 10 && fileSizeInMb <= 100) {
+        chunkSize = $.getOpt('chunkSizeFrom10To100');
+      }
+
+      if (fileSizeInMb > 100 && fileSizeInMb <= 1000) {
+        chunkSize = $.getOpt('chunkSizeFrom100To1000');
+      }
+
+      if (fileSizeInMb > 1000) {
+        chunkSize = $.getOpt('chunkSizeFrom1000');
+      }
+
+      return chunkSize;
+    }
+
     // EVENTS
     // catchAll(event, ...)
     // fileSuccess(file), fileProgress(file), fileAdded(file, event), filesAdded(files, filesSkipped), fileRetry(file),
@@ -186,6 +233,13 @@
         var relativePath = file.webkitRelativePath || file.relativePath || file.fileName || file.name; // Some confusion in different versions of Firefox
         var size         = file.size;
         return (size + '-' + relativePath.replace(/[^0-9a-zA-Z_-]/img, '') + '-' + Date.now());
+      },
+      generateHash: async function (file, event) {
+        var custom = $.getOpt('generateHash');
+        if (typeof custom === 'function') {
+          return custom(file, event);
+        }
+        return await hashBlob(file);
       },
       contains: function (array, test) {
         var result = false;
@@ -412,7 +466,7 @@
           }, 0);
         }
       };
-      $h.each(fileList, function (file) {
+      $h.each(fileList, async function (file) {
         var fileName = file.name;
         var fileType = file.type; // e.g video/mp4
         if (o.fileType.length > 0) {
@@ -450,11 +504,11 @@
           return true;
         }
 
-        function addFile(uniqueIdentifier) {
+        function addFile(uniqueIdentifier, hash) {
           if (!$.getFromUniqueIdentifier(uniqueIdentifier)) {
             (function () {
               file.uniqueIdentifier = uniqueIdentifier;
-              var f                 = new ResumableFile($, file, uniqueIdentifier);
+              var f                 = new ResumableFile($, file, uniqueIdentifier, hash);
               $.files.push(f);
               files.push(f);
               f.container = (typeof event != 'undefined' ? event.srcElement : null);
@@ -471,13 +525,14 @@
 
         // directories have size == 0
         var uniqueIdentifier = $h.generateUniqueIdentifier(file, event);
+        const hash = await $h.generateHash(file, event);
         if (uniqueIdentifier && typeof uniqueIdentifier.then === 'function') {
           // Promise or Promise-like object provided as unique identifier
           uniqueIdentifier
             .then(
               function (uniqueIdentifier) {
                 // unique identifier generation succeeded
-                addFile(uniqueIdentifier);
+                addFile(uniqueIdentifier, hash);
               },
               function () {
                 // unique identifier generation failed
@@ -487,13 +542,13 @@
             );
         } else {
           // non-Promise provided as unique identifier, process synchronously
-          addFile(uniqueIdentifier);
+          addFile(uniqueIdentifier, hash);
         }
       });
     };
 
     // INTERNAL OBJECT TYPES
-    function ResumableFile(resumableObj, file, uniqueIdentifier) {
+    function ResumableFile(resumableObj, file, uniqueIdentifier, hash) {
       var $              = this;
       $.opts             = {};
       $.getOpt           = resumableObj.getOpt;
@@ -504,6 +559,7 @@
       $.size             = file.size;
       $.relativePath     = file.relativePath || file.webkitRelativePath || $.fileName;
       $.uniqueIdentifier = uniqueIdentifier;
+      $.hash             = hash;
       $._pause           = false;
       $.container        = '';
       $.preprocessState  = 0; // 0 = unprocessed, 1 = processing, 2 = finished
@@ -578,7 +634,7 @@
         $.chunks        = [];
         $._prevProgress = 0;
         var round       = $.getOpt('forceChunkSize') ? Math.ceil : Math.floor;
-        var maxOffset   = Math.max(round($.file.size / $.getOpt('chunkSize')), 1);
+        var maxOffset   = Math.max(round($.file.size / $.resumableObj.calcChunkSize($.file.size)), 1);
         for (var offset = 0; offset < maxOffset; offset++) {
           (function (offset) {
             $.chunks.push(new ResumableChunk($.resumableObj, $, offset, chunkEvent));
@@ -701,7 +757,7 @@
       $.markComplete         = false;
 
       // Computed properties
-      var chunkSize = $.getOpt('chunkSize');
+      var chunkSize = $.resumableObj.calcChunkSize($.fileObjSize);
       $.loaded      = 0;
       $.startByte   = $.offset * chunkSize;
       $.endByte     = Math.min($.fileObjSize, ($.offset + 1) * chunkSize);
@@ -711,8 +767,12 @@
       }
       $.xhr = null;
 
+      async function getFileHash(blob) {
+        return await hashBlob(blob);
+      }
+
       // test() makes a GET request without any data to see if the chunk has already been uploaded in a previous session
-      $.test = function () {
+      $.test = async function () {
         // Set up request and listen for event
         $.xhr = new XMLHttpRequest();
 
@@ -730,6 +790,16 @@
         $.xhr.addEventListener('error', testHandler, false);
         $.xhr.addEventListener('timeout', testHandler, false);
 
+        //
+        let fileTarget = null;
+        if ($.fileObj.file.target !== undefined && $.fileObj.file.target !== null) {
+          fileTarget = $.fileObj.file.target;
+        }
+
+        //
+        const blobObj  = $.fileObj.file.slice($.startByte, $.endByte, $.getOpt('setChunkTypeFromFile') ? $.fileObj.file.type : "");
+        const chunkHash = await getFileHash(blobObj);
+
         // Add data from the query options
         var params             = [];
         var parameterNamespace = $.getOpt('parameterNamespace');
@@ -743,11 +813,13 @@
           [
             // define key/value pairs for additional parameters
             ['chunkNumberParameterName', $.offset + 1],
+            ['chunkHashParameterName', chunkHash],
             ['chunkSizeParameterName', $.getOpt('chunkSize')],
             ['currentChunkSizeParameterName', $.endByte - $.startByte],
             ['totalSizeParameterName', $.fileObjSize],
             ['typeParameterName', $.fileObjType],
             ['identifierParameterName', $.fileObj.uniqueIdentifier],
+            ['hashParameterName', $.fileObj.hash],
             ['fileNameParameterName', $.fileObj.fileName],
             ['relativePathParameterName', $.fileObj.relativePath],
             ['totalChunksParameterName', $.fileObj.chunks.length]
@@ -764,8 +836,10 @@
               ].join('=');
             })
         );
+
         // Append the relevant chunk and send it
-        $.xhr.open($.getOpt('testMethod'), $h.getTarget('test', params));
+        $.xhr.open($.getOpt('testMethod'), $h.getTarget('test', params, fileTarget));
+
         $.xhr.timeout         = $.getOpt('xhrTimeout');
         $.xhr.withCredentials = $.getOpt('withCredentials');
         // Add data from header options
@@ -785,7 +859,7 @@
       };
 
       // send() uploads the actual data in a POST call
-      $.send     = function () {
+      $.send     = async function () {
         var preprocess = $.getOpt('preprocess');
         if (typeof preprocess === 'function') {
           switch ($.preprocessState) {
@@ -842,14 +916,23 @@
         $.xhr.addEventListener('error', doneHandler, false);
         $.xhr.addEventListener('timeout', doneHandler, false);
 
+        let blobObj  = $.fileObj.file.slice($.startByte, $.endByte, $.getOpt('setChunkTypeFromFile') ? $.fileObj.file.type : "");
+        let data   = null;
+        let params = [];
+
+        //
+        const chunkHash = await getFileHash(blobObj);
+
         // Set up the basic query data from Resumable
         var query       = [
           ['chunkNumberParameterName', $.offset + 1],
+          ['chunkHashParameterName', chunkHash],
           ['chunkSizeParameterName', $.getOpt('chunkSize')],
           ['currentChunkSizeParameterName', $.endByte - $.startByte],
           ['totalSizeParameterName', $.fileObjSize],
           ['typeParameterName', $.fileObjType],
           ['identifierParameterName', $.fileObj.uniqueIdentifier],
+          ['hashParameterName', $.fileObj.hash],
           ['fileNameParameterName', $.fileObj.fileName],
           ['relativePathParameterName', $.fileObj.relativePath],
           ['totalChunksParameterName', $.fileObj.chunks.length]
@@ -870,15 +953,10 @@
           query[k] = v;
         });
 
-        var func   = ($.fileObj.file.slice ? 'slice' : ($.fileObj.file.mozSlice ? 'mozSlice' : ($.fileObj.file.webkitSlice ? 'webkitSlice' : 'slice')));
-        var bytes  = $.fileObj.file[func]($.startByte, $.endByte, $.getOpt('setChunkTypeFromFile') ? $.fileObj.file.type : "");
-        var data   = null;
-        var params = [];
-
         var parameterNamespace = $.getOpt('parameterNamespace');
         if ($.getOpt('method') === 'octet') {
           // Add data from the query options
-          data = bytes;
+          data = blobObj;
           $h.each(query, function (k, v) {
             params.push([encodeURIComponent(parameterNamespace + k), encodeURIComponent(v)].join('='));
           });
@@ -890,14 +968,14 @@
             params.push([encodeURIComponent(parameterNamespace + k), encodeURIComponent(v)].join('='));
           });
           if ($.getOpt('chunkFormat') == 'blob') {
-            data.append(parameterNamespace + $.getOpt('fileParameterName'), bytes, $.fileObj.fileName);
+            data.append(parameterNamespace + $.getOpt('fileParameterName'), blobObj, $.fileObj.fileName);
           } else if ($.getOpt('chunkFormat') == 'base64') {
             var fr    = new FileReader();
             fr.onload = function (e) {
               data.append(parameterNamespace + $.getOpt('fileParameterName'), fr.result);
               $.xhr.send(data);
             }
-            fr.readAsDataURL(bytes);
+            fr.readAsDataURL(blobObj);
           }
         }
 

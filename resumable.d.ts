@@ -14,6 +14,18 @@ declare namespace Resumable {
      **/
     chunkSize?: number;
     /**
+     * The size in bytes of each uploaded chunk of data. The last uploaded chunk will be at least this size and up to two the size, see Issue #51 for details and reasons. (Default: 1*1024*1024)
+     **/
+    chunkSizeFrom10To100?: number;
+    /**
+     * The size in bytes of each uploaded chunk of data. The last uploaded chunk will be at least this size and up to two the size, see Issue #51 for details and reasons. (Default: 1*1024*1024)
+     **/
+    chunkSizeFrom100To1000?: number;
+    /**
+     * The size in bytes of each uploaded chunk of data. The last uploaded chunk will be at least this size and up to two the size, see Issue #51 for details and reasons. (Default: 1*1024*1024)
+     **/
+    chunkSizeFrom1000?: number;
+    /**
      * Force all chunks to be less or equal than chunkSize. Otherwise, the last chunk will be greater than or equal to chunkSize. (Default: false)
      **/
     forceChunkSize?: boolean;
@@ -145,6 +157,10 @@ declare namespace Resumable {
      * Standard CORS requests do not send or set any cookies by default. In order to include cookies as part of the request, you need to set the withCredentials property to true. (Default: false)
      **/
     withCredentials?: boolean;
+    /**
+     *
+     */
+    permanentErrors?: number[];
   }
 
   class Resumable {
