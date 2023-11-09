@@ -86,6 +86,10 @@ declare namespace Resumable {
      **/
     uploadMethod?: string;
     /**
+     * Method for file upload confirmation (Default: 'PUT')
+     **/
+    successMethod?: string;
+    /**
      * Extra prefix added before the name of each parameter included in the multipart POST or in the test GET. (Default: '')
      **/
     parameterNamespace?: string;
@@ -105,6 +109,9 @@ declare namespace Resumable {
      * Make a GET request to the server for each chunks to see if it already exists. If implemented on the server-side, this will allow for upload resumes even after a browser crash or even a computer restart. (Default: true)
      **/
     testChunks?: boolean;
+
+    applySuccessMethod?: boolean;
+
     /**
      * Optional function to process each chunk before testing & sending. Function is passed the chunk as parameter, and should call the preprocessFinished method on the chunk when finished. (Default: null)
      **/
